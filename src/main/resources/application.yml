@@ -3,6 +3,11 @@ spring:
   application:
     name: vibify
 
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
+
   datasource:
     url: ${DB_URL}
     username: ${DB_USERNAME}
@@ -15,7 +20,7 @@ spring:
     show-sql: true
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
 
 jwt:
   secret: ${JWT_SECRET}
@@ -23,3 +28,10 @@ jwt:
 
 server:
   port: 8080
+
+r2:
+  endpoint: ${R2_ENDPOINT}
+  accessKey: ${R2_ACCESS_KEY}
+  secretKey: ${R2_SECRET_KEY}
+  bucket: ${R2_BUCKET}
+  publicUrl: ${R2_PUBLIC_URL}
