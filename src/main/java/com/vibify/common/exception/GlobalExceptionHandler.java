@@ -44,4 +44,13 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
     }
 
+    @ExceptionHandler(SongNotFoundException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handleInvalidCredentials(SongNotFoundException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "SONG_NOT_FOUND");
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
 }
