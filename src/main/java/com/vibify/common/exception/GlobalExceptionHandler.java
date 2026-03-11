@@ -17,14 +17,6 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<GlobalApiResponse<Void>> handleGenericException(Exception ex) {
-
-        GlobalApiResponse<Void> response =
-                GlobalApiResponse.error("Something went wrong", "INTERNAL_SERVER_ERROR");
-
-        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
-    }
 
     @ExceptionHandler(UserAlreadyExistsException.class)
     public ResponseEntity<GlobalApiResponse<Void>> handleUserExists(UserAlreadyExistsException ex) {
@@ -52,5 +44,69 @@ public class GlobalExceptionHandler {
 
         return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
     }
+
+
+    /// PLAYLIST EXCEPTION
+
+
+    @ExceptionHandler(PlaylistException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handlePlaylistNotFound(PlaylistException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "PLAYLIST_NOT_FOUND");
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Playlist Not Found
+     */
+    @ExceptionHandler(PlaylistNotFoundException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handlePlaylistNotFound(PlaylistNotFoundException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "PLAYLIST_NOT_FOUND");
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+    /**
+     * Duplicate Song in Playlist
+     */
+    @ExceptionHandler(SongAlreadyExistsInPlaylistException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handleSongAlreadyExists(SongAlreadyExistsInPlaylistException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "SONG_ALREADY_EXISTS_IN_PLAYLIST");
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Song Not In Playlist
+     */
+    @ExceptionHandler(SongNotInPlaylistException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handleSongNotInPlaylist(SongNotInPlaylistException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "SONG_NOT_IN_PLAYLIST");
+
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
+    }
+
+
+
+
+
+    /// --- GENRIC EXCEPTION ------
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handleGenericException(Exception ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error("Something went wrong", "INTERNAL_SERVER_ERROR");
+
+        return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
 
 }
