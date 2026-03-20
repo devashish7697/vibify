@@ -1,5 +1,6 @@
 package com.vibify.room.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
@@ -13,7 +14,7 @@ public class CreateRoomRequestDto {
     @NotNull(message = "Name is required")
     private String name;
 
-    @NotNull(message = "Playlist private and public is required")
+    @JsonProperty("isPrivate")
     private boolean isPrivate;
 
 }

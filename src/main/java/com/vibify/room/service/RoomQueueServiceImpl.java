@@ -26,6 +26,7 @@ public class RoomQueueServiceImpl implements RoomQueueService {
     private final RoomQueueItemRepository roomQueueItemRepository;
     private final RoomMembershipService roomMembershipService;
     private final SongRepository songRepository;
+    private final RoomService roomService;
 
     /**
      * Add a single song to the room queue.
@@ -49,6 +50,7 @@ public class RoomQueueServiceImpl implements RoomQueueService {
                 .build();
 
         RoomQueueItem saved = roomQueueItemRepository.save(item);
+        roomService.updateRoomActivity(roomId);
 
         return mapToDto(saved);
     }
@@ -71,6 +73,7 @@ public class RoomQueueServiceImpl implements RoomQueueService {
         }
 
         roomQueueItemRepository.delete(item);
+        roomService.updateRoomActivity(roomId);
     }
 
     /**
@@ -80,22 +83,51 @@ public class RoomQueueServiceImpl implements RoomQueueService {
     @Transactional
     public void reorderQueueItem(UUID roomId,
                                  Long queueItemId,
-                                 Integer newOrderIndex,
+                                 Integer newPosition,
                                  Long userId) {
 
         roomMembershipService.validateUserMembership(roomId, userId);
 
-        RoomQueueItem item = roomQueueItemRepository.findById(queueItemId)
-                .orElseThrow(() ->
-                        new QueueItemNotFoundException("Queue item not found"));
+        List<RoomQueueItem> queue =
+                roomQueueItemRepository.findByRoomIdOrderByOrderIndexAsc(roomId);
 
-        if (!item.getRoomId().equals(roomId)) {
-            throw new QueueItemNotFoundException("Queue item does not belong to this room");
+        RoomQueueItem item = queue.stream()
+                .filter(q -> q.getId().equals(queueItemId))
+                .findFirst()
+                .orElseThrow(() -> new QueueItemNotFoundException("Queue item not found"));
+
+        queue.remove(item);
+
+        if (newPosition < 0 || newPosition > queue.size()) {
+            throw new IllegalArgumentException("Invalid queue position");
+        }
+
+        queue.add(newPosition, item);
+
+        Integer newOrderIndex;
+
+        if (newPosition == 0) {
+
+            Integer nextIndex = queue.get(1).getOrderIndex();
+            newOrderIndex = nextIndex / 2;
+
+        } else if (newPosition == queue.size() - 1) {
+
+            Integer prevIndex = queue.get(queue.size() - 2).getOrderIndex();
+            newOrderIndex = prevIndex + ORDER_GAP;
+
+        } else {
+
+            Integer prevIndex = queue.get(newPosition - 1).getOrderIndex();
+            Integer nextIndex = queue.get(newPosition + 1).getOrderIndex();
+
+            newOrderIndex = (prevIndex + nextIndex) / 2;
         }
 
         item.setOrderIndex(newOrderIndex);
 
         roomQueueItemRepository.save(item);
+        roomService.updateRoomActivity(roomId);
     }
 
     /**
@@ -103,7 +135,9 @@ public class RoomQueueServiceImpl implements RoomQueueService {
      */
     @Override
     @Transactional(readOnly = true)
-    public List<RoomQueueItemDto> getRoomQueue(UUID roomId) {
+    public List<RoomQueueItemDto> getRoomQueue(UUID roomId, Long userId) {
+
+        roomMembershipService.validateUserMembership(roomId, userId);
 
         return roomQueueItemRepository
                 .findByRoomIdOrderByOrderIndexAsc(roomId)
@@ -140,6 +174,7 @@ public class RoomQueueServiceImpl implements RoomQueueService {
     @Transactional
     public void clearQueue(UUID roomId) {
         roomQueueItemRepository.deleteByRoomId(roomId);
+        roomService.updateRoomActivity(roomId);
     }
 
     /**

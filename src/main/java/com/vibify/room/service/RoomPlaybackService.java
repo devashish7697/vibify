@@ -40,6 +40,6 @@ public interface RoomPlaybackService {
     /**
      * Retrieve current playback state for a room.
      */
-    RoomPlaybackStateDto getPlaybackState(UUID roomId);
+    RoomPlaybackStateDto getPlaybackState(UUID roomId, Long userId );
 
 }

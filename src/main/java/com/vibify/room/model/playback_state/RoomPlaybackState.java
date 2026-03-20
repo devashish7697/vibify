@@ -42,8 +42,11 @@ public class RoomPlaybackState {
     private PlaybackStatus status;
 
     @Version
-    @Column(name = "version")
-    private Long version;
+    @Column(name = "db_version")
+    private Long dbVersion; // for JPA
+
+    @Column(name = "state_version")
+    private Long stateVersion; // for WebSocket ordering
 
     @Column(name = "last_action_by")
     private Long lastActionBy;

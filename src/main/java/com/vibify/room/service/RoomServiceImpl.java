@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -175,5 +176,16 @@ public class RoomServiceImpl implements RoomService {
         return roomRepository.findByInviteCode(inviteCode)
                 .orElseThrow(() ->
                         new RoomNotFoundException("Room not found for invite code: " + inviteCode));
+    }
+
+    @Override
+    @Transactional
+    public void updateRoomActivity(UUID roomId) {
+
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new RuntimeException("Room not found"));
+
+        room.setLastActivityAt(LocalDateTime.now());
+        room.setStatus(RoomStatus.ACTIVE);
     }
 }

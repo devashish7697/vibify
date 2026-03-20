@@ -96,6 +96,15 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
     }
 
+    @ExceptionHandler(PlaylistAccessDeniedException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handleSongNotInPlaylist(PlaylistAccessDeniedException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "ACCESS DENIED");
+
+        return new ResponseEntity<>(response, HttpStatus.FORBIDDEN);
+    }
+
 
     ///------- ROOM EXCEPTION -------------
 

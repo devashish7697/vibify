@@ -34,10 +34,10 @@ public class RoomStateServiceImpl implements RoomStateService {
         List<RoomMemberDto> members = roomMembershipService.getRoomMembers(roomId);
 
         // 4️⃣ fetch queue
-        List<RoomQueueItemDto> queue = roomQueueService.getRoomQueue(roomId);
+        List<RoomQueueItemDto> queue = roomQueueService.getRoomQueue(roomId, userId);
 
         // 5️⃣ fetch playback
-        RoomPlaybackStateDto playback = roomPlaybackService.getPlaybackState(roomId);
+        RoomPlaybackStateDto playback = roomPlaybackService.getPlaybackState(roomId, userId);
 
         // 6️⃣ determine permissions
         boolean canManageRoom =

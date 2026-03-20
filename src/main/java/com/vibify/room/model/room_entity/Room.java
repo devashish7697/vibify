@@ -48,6 +48,10 @@ public class Room {
     @Column(name = "last_activity_at", nullable = false)
     private LocalDateTime lastActivityAt;
 
+    @Column(name = "ended_at")
+    private LocalDateTime endedAt;
+
+
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();

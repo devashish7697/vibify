@@ -1,5 +1,6 @@
 package com.vibify.room.service;
 
+import com.vibify.common.exception.PlaylistAccessDeniedException;
 import com.vibify.common.exception.PlaylistException;
 import com.vibify.common.exception.SongNotFoundException;
 import com.vibify.common.exception.room_exception.PlaybackStateNotFoundException;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 @RequiredArgsConstructor
@@ -35,252 +37,353 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
     private final RoomMembershipService membershipService;
     private final SongRepository songRepository;
     private final PlaylistItemRepository playlistItemRepository;
+    private final RoomPlaybackLockManager lockManager;
 
     private final PlaylistRepository playlistRepository;
+    private final RoomService roomService;
 
     private static final int ORDER_GAP = 1000;
 
     /**
      * Play a single song
      */
-    @Override
     @Transactional
-    public RoomPlaybackStateDto playSong(UUID roomId, Long songId, Long userId) {
+    public RoomPlaybackStateDto playSongInternal(UUID roomId, Long songId, Long userId) {
 
-        membershipService.validateUserMembership(roomId, userId);
+            membershipService.validateUserMembership(roomId, userId);
 
-        Song song = songRepository.findById(songId)
-                .orElseThrow(() -> new SongNotFoundException("Song not found"));
+            Song song = songRepository.findById(songId)
+                    .orElseThrow(() -> new SongNotFoundException("Song not found"));
 
-        roomQueueService.clearQueue(roomId);
-
-        RoomQueueItem queueItem = RoomQueueItem.builder()
-                .roomId(roomId)
-                .songId(songId)
-                .addedBy(userId)
-                .orderIndex(ORDER_GAP)
-                .sourceType(QueueSourceType.MANUAL)
-                .sourceId(null)
-                .createdAt(System.currentTimeMillis())
-                .build();
-
-        queueItem = queueRepository.save(queueItem);
-
-        RoomPlaybackState state = createOrUpdatePlaybackState(
-                roomId,
-                queueItem,
-                userId,
-                QueueSourceType.MANUAL,
-                null
-        );
-
-        return mapToDto(state, song);
-    }
-
-    /**
-     * Play playlist
-     */
-    @Override
-    @Transactional
-    public RoomPlaybackStateDto playPlaylist(UUID roomId, Long playlistId, Long userId) {
-
-        membershipService.validateUserMembership(roomId, userId);
-        Playlist playlist = playlistRepository.findById(playlistId)
-                .orElseThrow(() -> new PlaylistException("Playlist not found"));
-
-
-        ///  A User can play his playlist only which he created in his account
-        if (!playlist.getUser().getId().equals(userId)) {
-            throw new PlaylistException("You can only play your own playlists in a room");
-        }
-
-        roomQueueService.clearQueue(roomId);
-
-        List<PlaylistItem> items =
-                playlistItemRepository.findByPlaylistIdOrderByOrderIndexAsc(playlistId);
-
-        if (items.isEmpty()) {
-            throw new RuntimeException("Playlist empty");
-        }
-
-        int order = ORDER_GAP;
-        RoomQueueItem firstQueueItem = null;
-
-        for (PlaylistItem item : items) {
+            roomQueueService.clearQueue(roomId);
 
             RoomQueueItem queueItem = RoomQueueItem.builder()
                     .roomId(roomId)
-                    .songId(item.getSong().getId())
+                    .songId(songId)
                     .addedBy(userId)
-                    .orderIndex(order)
-                    .sourceType(QueueSourceType.PLAYLIST)
-                    .sourceId(playlistId)
+                    .orderIndex(ORDER_GAP)
+                    .sourceType(QueueSourceType.MANUAL)
+                    .sourceId(null)
                     .createdAt(System.currentTimeMillis())
                     .build();
 
             queueItem = queueRepository.save(queueItem);
 
-            if (firstQueueItem == null) {
-                firstQueueItem = queueItem;
+            RoomPlaybackState state = createOrUpdatePlaybackState(
+                    roomId,
+                    queueItem,
+                    userId,
+                    QueueSourceType.MANUAL,
+                    null
+            );
+
+            roomService.updateRoomActivity(roomId);
+
+            return mapToDto(state, song);
+    }
+
+    @Override
+    public RoomPlaybackStateDto playSong(UUID roomId, Long songId, Long userId) {
+
+        ReentrantLock lock = lockManager.getLock(roomId);
+        lock.lock();
+
+        try {
+           return  playSongInternal(roomId,songId,userId);
+        } finally {
+            lock.unlock();
+            lockManager.releaseLockIfUnused(roomId);
+        }
+    }
+
+    /**
+     * Play playlist
+     */
+
+    @Transactional
+    public RoomPlaybackStateDto playPlaylistInternal(UUID roomId, Long playlistId, Long userId) {
+
+            membershipService.validateUserMembership(roomId, userId);
+            Playlist playlist = playlistRepository.findById(playlistId)
+                    .orElseThrow(() -> new PlaylistException("Playlist not found"));
+
+
+            ///  A User can play his playlist only which he created in his account
+            if (!playlist.getUser().getId().equals(userId)) {
+                throw new PlaylistAccessDeniedException("You can only play your own playlists in a room");
             }
 
-            order += ORDER_GAP;
+            roomQueueService.clearQueue(roomId);
+
+            List<PlaylistItem> items =
+                    playlistItemRepository.findByPlaylistIdOrderByOrderIndexAsc(playlistId);
+
+            if (items.isEmpty()) {
+                throw new PlaylistException("Playlist has no songs");
+            }
+
+            int order = ORDER_GAP;
+            RoomQueueItem firstQueueItem = null;
+
+            for (PlaylistItem item : items) {
+
+                RoomQueueItem queueItem = RoomQueueItem.builder()
+                        .roomId(roomId)
+                        .songId(item.getSong().getId())
+                        .addedBy(userId)
+                        .orderIndex(order)
+                        .sourceType(QueueSourceType.PLAYLIST)
+                        .sourceId(playlistId)
+                        .createdAt(System.currentTimeMillis())
+                        .build();
+
+                queueItem = queueRepository.save(queueItem);
+
+                if (firstQueueItem == null) {
+                    firstQueueItem = queueItem;
+                }
+
+                order += ORDER_GAP;
+            }
+
+            Song song = songRepository.findById(firstQueueItem.getSongId())
+                    .orElseThrow(() -> new SongNotFoundException("Song not found"));
+
+            RoomPlaybackState state = createOrUpdatePlaybackState(
+                    roomId,
+                    firstQueueItem,
+                    userId,
+                    QueueSourceType.PLAYLIST,
+                    playlistId
+            );
+
+            roomService.updateRoomActivity(roomId);
+
+            return mapToDto(state, song);
+    }
+
+    @Override
+    public RoomPlaybackStateDto playPlaylist(UUID roomId, Long playlistId, Long userId) {
+
+        ReentrantLock lock = lockManager.getLock(roomId);
+        lock.lock();
+
+        try {
+            return playPlaylistInternal(roomId,playlistId,userId);
+        } finally {
+            lock.unlock();
+            lockManager.releaseLockIfUnused(roomId);
         }
-
-        Song song = songRepository.findById(firstQueueItem.getSongId())
-                .orElseThrow(() -> new SongNotFoundException("Song not found"));
-
-        RoomPlaybackState state = createOrUpdatePlaybackState(
-                roomId,
-                firstQueueItem,
-                userId,
-                QueueSourceType.PLAYLIST,
-                playlistId
-        );
-
-        return mapToDto(state, song);
     }
 
     /**
      * Pause playback
      */
-    @Override
     @Transactional
+    public RoomPlaybackStateDto pausePlaybackInternal(UUID roomId, Long userId) {
+
+            membershipService.validateUserMembership(roomId, userId);
+
+            RoomPlaybackState state = getState(roomId);
+
+            if (state.getStatus() == PlaybackStatus.PAUSED) {
+                return mapToDto(state);
+            }
+
+            long now = System.currentTimeMillis();
+
+            if (state.getStartedAt() == null) {
+                return mapToDto(state);
+            }
+
+            long elapsed = now - state.getStartedAt();
+            state.setOffsetMillis(state.getOffsetMillis() + elapsed);
+
+            state.setStatus(PlaybackStatus.PAUSED);
+            state.setUpdatedAt(now);
+            state.setLastActionBy(userId);
+
+            incrementVersion(state);
+            playbackRepository.save(state);
+            roomService.updateRoomActivity(roomId);
+
+            return mapToDto(state);
+    }
+
+    @Override
     public RoomPlaybackStateDto pausePlayback(UUID roomId, Long userId) {
 
-        membershipService.validateUserMembership(roomId, userId);
+        ReentrantLock lock = lockManager.getLock(roomId);
+        lock.lock();
 
-        RoomPlaybackState state = getState(roomId);
-
-        if (state.getStatus() == PlaybackStatus.PAUSED) {
-            return mapToDto(state);
+        try {
+           return pausePlaybackInternal(roomId,userId);
+        } finally {
+            lock.unlock();
+            lockManager.releaseLockIfUnused(roomId);
         }
 
-        long now = System.currentTimeMillis();
-
-        if (state.getStartedAt() == null) {
-            return mapToDto(state);
-        }
-
-        long elapsed = now - state.getStartedAt();
-        state.setOffsetMillis(state.getOffsetMillis() + elapsed);
-
-        state.setStatus(PlaybackStatus.PAUSED);
-        state.setUpdatedAt(now);
-        state.setLastActionBy(userId);
-
-        playbackRepository.save(state);
-
-        return mapToDto(state);
     }
 
     /**
      * Resume playback
      */
-    @Override
+
     @Transactional
+    public RoomPlaybackStateDto resumePlaybackInternal(UUID roomId, Long userId) {
+
+            membershipService.validateUserMembership(roomId, userId);
+
+            RoomPlaybackState state = getState(roomId);
+
+            if (state.getStatus() == PlaybackStatus.PLAYING) {
+                return mapToDto(state);
+            }
+
+            long now = System.currentTimeMillis();
+
+            state.setStartedAt(now);
+            state.setStatus(PlaybackStatus.PLAYING);
+            state.setUpdatedAt(now);
+            state.setLastActionBy(userId);
+
+            incrementVersion(state);
+            playbackRepository.save(state);
+            roomService.updateRoomActivity(roomId);
+
+            return mapToDto(state);
+    }
+
+    @Override
     public RoomPlaybackStateDto resumePlayback(UUID roomId, Long userId) {
 
-        membershipService.validateUserMembership(roomId, userId);
+        ReentrantLock lock = lockManager.getLock(roomId);
+        lock.lock();
 
-        RoomPlaybackState state = getState(roomId);
-
-        if (state.getStatus() == PlaybackStatus.PLAYING) {
-            return mapToDto(state);
+        try {
+           return resumePlaybackInternal(roomId,userId);
+        } finally {
+            lock.unlock();
+            lockManager.releaseLockIfUnused(roomId);
         }
-
-        long now = System.currentTimeMillis();
-
-        state.setStartedAt(now);
-        state.setStatus(PlaybackStatus.PLAYING);
-        state.setUpdatedAt(now);
-        state.setLastActionBy(userId);
-
-        playbackRepository.save(state);
-
-        return mapToDto(state);
     }
 
     /**
      * Seek playback
      */
-    @Override
+
     @Transactional
+    public RoomPlaybackStateDto seekPlaybackInternal(UUID roomId, Long newOffsetMillis, Long userId) {
+
+            membershipService.validateUserMembership(roomId, userId);
+
+            RoomPlaybackState state = getState(roomId);
+
+            if (state.getStartedAt() == null) {
+                state.setOffsetMillis(newOffsetMillis);
+                incrementVersion(state);
+                playbackRepository.save(state);
+                return mapToDto(state);
+            }
+
+            long now = System.currentTimeMillis();
+
+            state.setOffsetMillis(newOffsetMillis);
+            state.setStartedAt(now);
+            state.setUpdatedAt(now);
+            state.setLastActionBy(userId);
+
+            incrementVersion(state);
+            playbackRepository.save(state);
+        roomService.updateRoomActivity(roomId);
+
+            return mapToDto(state);
+    }
+
+    @Override
     public RoomPlaybackStateDto seekPlayback(UUID roomId, Long newOffsetMillis, Long userId) {
 
-        membershipService.validateUserMembership(roomId, userId);
+        ReentrantLock lock = lockManager.getLock(roomId);
+        lock.lock();
 
-        RoomPlaybackState state = getState(roomId);
-
-        if (state.getStartedAt() == null) {
-            state.setOffsetMillis(newOffsetMillis);
-            playbackRepository.save(state);
-            return mapToDto(state);
+        try {
+           return seekPlaybackInternal(roomId,newOffsetMillis,userId);
+        } finally {
+            lock.unlock();
+            lockManager.releaseLockIfUnused(roomId);
         }
-
-        long now = System.currentTimeMillis();
-
-        state.setOffsetMillis(newOffsetMillis);
-        state.setStartedAt(now);
-        state.setUpdatedAt(now);
-        state.setLastActionBy(userId);
-
-        playbackRepository.save(state);
-
-        return mapToDto(state);
     }
 
     /**
      * Skip to next
      */
-    @Override
     @Transactional
+    public RoomPlaybackStateDto skipToNextInternal(UUID roomId, Long userId) {
+
+            membershipService.validateUserMembership(roomId, userId);
+
+            RoomPlaybackState state = getState(roomId);
+
+            if (state.getQueueItemId() == null) {
+                state.setStatus(PlaybackStatus.STOPPED);
+                incrementVersion(state);
+                playbackRepository.save(state);
+                return mapToDto(state);
+            }
+
+            RoomQueueItem current = queueRepository.findById(state.getQueueItemId())
+                    .orElseThrow(() -> new RuntimeException("Current queue item not found"));
+
+            RoomQueueItem next = queueRepository
+                    .findFirstByRoomIdAndOrderIndexGreaterThanOrderByOrderIndexAsc(
+                            roomId,
+                            current.getOrderIndex()
+                    )
+                    .orElse(null);
+
+            if (next == null) {
+                /// clear old values
+                state.setStatus(PlaybackStatus.STOPPED);
+                state.setOffsetMillis(0L);
+                state.setStartedAt(null);
+                state.setUpdatedAt(System.currentTimeMillis());
+
+                incrementVersion(state);
+                playbackRepository.save(state);
+                roomService.updateRoomActivity(roomId);
+
+                return mapToDto(state);
+            }
+
+            Song song = songRepository.findById(next.getSongId())
+                    .orElseThrow(() -> new SongNotFoundException("Song not found"));
+
+            RoomPlaybackState newState = createOrUpdatePlaybackState(
+                    roomId,
+                    next,
+                    userId,
+                    next.getSourceType(),
+                    next.getSourceId()
+            );
+            roomService.updateRoomActivity(roomId);
+
+            return mapToDto(newState, song);
+    }
+
+
+    @Override
     public RoomPlaybackStateDto skipToNext(UUID roomId, Long userId) {
 
-        membershipService.validateUserMembership(roomId, userId);
+        ReentrantLock lock = lockManager.getLock(roomId);
+        lock.lock();
 
-        RoomPlaybackState state = getState(roomId);
-
-        if (state.getQueueItemId() == null) {
-            state.setStatus(PlaybackStatus.STOPPED);
-            playbackRepository.save(state);
-            return mapToDto(state);
+        try {
+            return skipToNextInternal(roomId,userId);
+        } finally {
+            lock.unlock();
+            lockManager.releaseLockIfUnused(roomId);
         }
 
-        RoomQueueItem current = queueRepository.findById(state.getQueueItemId())
-                .orElseThrow(() -> new RuntimeException("Current queue item not found"));
-
-        RoomQueueItem next = queueRepository
-                .findFirstByRoomIdAndOrderIndexGreaterThanOrderByOrderIndexAsc(
-                        roomId,
-                        current.getOrderIndex()
-                )
-                .orElse(null);
-
-        if (next == null) {
-            /// clear old values
-            state.setStatus(PlaybackStatus.STOPPED);
-            state.setOffsetMillis(0L);
-            state.setStartedAt(null);
-            state.setUpdatedAt(System.currentTimeMillis());
-
-            playbackRepository.save(state);
-
-            return mapToDto(state);
-        }
-
-        Song song = songRepository.findById(next.getSongId())
-                .orElseThrow(() -> new SongNotFoundException("Song not found"));
-
-        RoomPlaybackState newState = createOrUpdatePlaybackState(
-                roomId,
-                next,
-                userId,
-                next.getSourceType(),
-                next.getSourceId()
-        );
-
-        return mapToDto(newState, song);
     }
 
     /**
@@ -288,7 +391,10 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
      */
     @Override
     @Transactional(readOnly = true)
-    public RoomPlaybackStateDto getPlaybackState(UUID roomId) {
+    public RoomPlaybackStateDto getPlaybackState(UUID roomId, Long userId) {
+
+        membershipService.validateUserMembership(roomId, userId);
+
         RoomPlaybackState state = playbackRepository.findById(roomId)
                 .orElse(null);
 
@@ -315,6 +421,7 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
     ) {
 
         long now = System.currentTimeMillis();
+        PlaybackSourceType playbackSource;
 
         RoomPlaybackState state = playbackRepository.findById(roomId)
                 .orElse(RoomPlaybackState.builder().roomId(roomId).build());
@@ -323,9 +430,17 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
             throw new RuntimeException("Queue item does not belong to this room");
         }
 
+        switch (sourceType) {
+            case PLAYLIST:
+                playbackSource = PlaybackSourceType.PLAYLIST;
+                break;
+            default:
+                playbackSource = PlaybackSourceType.SONG;
+        }
+
         state.setSongId(queueItem.getSongId());
         state.setQueueItemId(queueItem.getId());
-        state.setSourceType(PlaybackSourceType.valueOf(sourceType.name()));
+        state.setSourceType(playbackSource);
         state.setSourceId(sourceId);
         state.setStartedAt(now);
         state.setOffsetMillis(0L);
@@ -333,6 +448,7 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
         state.setLastActionBy(userId);
         state.setUpdatedAt(now);
 
+        incrementVersion(state);
         return playbackRepository.save(state);
     }
 
@@ -345,6 +461,8 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
                     .queueItemId(state.getQueueItemId())
                     .offsetMillis(state.getOffsetMillis())
                     .status(state.getStatus())
+                    .version(state.getStateVersion())
+                    .serverTime(System.currentTimeMillis())
                     .startedAt(state.getStartedAt())
                     .updatedAt(state.getUpdatedAt())
                     .build();
@@ -369,8 +487,18 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
                 .queueItemId(state.getQueueItemId())
                 .offsetMillis(state.getOffsetMillis())
                 .status(state.getStatus())
+                .version(state.getStateVersion())
+                .serverTime(System.currentTimeMillis())
                 .startedAt(state.getStartedAt())
                 .updatedAt(state.getUpdatedAt())
                 .build();
+    }
+
+    private void incrementVersion(RoomPlaybackState state) {
+        if (state.getStateVersion() == null) {
+            state.setStateVersion(1L);
+        } else {
+            state.setStateVersion(state.getStateVersion() + 1);
+        }
     }
 }

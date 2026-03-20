@@ -38,4 +38,6 @@ public interface RoomService {
 
     Room getRoomByInviteCodeEntity(String inviteCode);
 
+    void updateRoomActivity(UUID roomId);
+
 }

@@ -26,7 +26,7 @@ public interface RoomQueueService {
     /**
      * Fetch full queue for a room.
      */
-    List<RoomQueueItemDto> getRoomQueue(UUID roomId);
+    List<RoomQueueItemDto> getRoomQueue(UUID roomId, Long userId);
 
     /**
      * Fetch the next song in queue based on current order.

@@ -164,8 +164,10 @@ public class RoomController {
     public GlobalApiResponse<List<RoomQueueItemDto>> getRoomQueue(
             @PathVariable UUID roomId) {
 
+        Long userId = SecurityUtils.getCurrentUserId();
+
         List<RoomQueueItemDto> queue =
-                queueService.getRoomQueue(roomId);
+                queueService.getRoomQueue(roomId, userId);
 
         return GlobalApiResponse.success(queue);
     }
@@ -256,8 +258,10 @@ public class RoomController {
     public GlobalApiResponse<RoomPlaybackStateDto> getPlaybackState(
             @PathVariable UUID roomId) {
 
+        Long userId = SecurityUtils.getCurrentUserId();
+
         RoomPlaybackStateDto playback =
-                playbackService.getPlaybackState(roomId);
+                playbackService.getPlaybackState(roomId, userId);
 
         return GlobalApiResponse.success(playback);
     }

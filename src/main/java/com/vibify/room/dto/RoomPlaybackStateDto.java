@@ -32,6 +32,10 @@ public class RoomPlaybackStateDto {
 
     private PlaybackStatus status;
 
+    private Long version;
+
+    private Long serverTime;
+
     private Long startedAt;
 
     private Long updatedAt;
