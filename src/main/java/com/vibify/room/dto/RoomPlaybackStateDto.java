@@ -36,6 +36,8 @@ public class RoomPlaybackStateDto {
 
     private Long serverTime;
 
+    private Long lastActionBy;
+
     private Long startedAt;
 
     private Long updatedAt;

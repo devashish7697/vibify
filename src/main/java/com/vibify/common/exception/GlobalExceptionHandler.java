@@ -195,6 +195,14 @@ public class GlobalExceptionHandler {
     }
 
 
+    @ExceptionHandler(InvalidFcmTokenException.class)
+    public ResponseEntity<GlobalApiResponse<Void>> handlePlaybackStateNotFound(InvalidFcmTokenException ex) {
+
+        GlobalApiResponse<Void> response =
+                GlobalApiResponse.error(ex.getMessage(), "INVALID_FCM_TOKEN");
+
+        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+    }
 
 
     /// --- GENRIC EXCEPTION ------

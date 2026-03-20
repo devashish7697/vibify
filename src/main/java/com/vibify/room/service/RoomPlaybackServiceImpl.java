@@ -4,6 +4,7 @@ import com.vibify.common.exception.PlaylistAccessDeniedException;
 import com.vibify.common.exception.PlaylistException;
 import com.vibify.common.exception.SongNotFoundException;
 import com.vibify.common.exception.room_exception.PlaybackStateNotFoundException;
+import com.vibify.notification.service.NotificationService;
 import com.vibify.playlist.model.Playlist;
 import com.vibify.playlist.repository.PlaylistRepository;
 import com.vibify.room.dto.RoomPlaybackStateDto;
@@ -18,12 +19,15 @@ import com.vibify.songs.model.Song;
 import com.vibify.songs.repository.SongRepository;
 import com.vibify.playlist.model.PlaylistItem;
 import com.vibify.playlist.repository.PlaylistItemRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -41,6 +45,9 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
 
     private final PlaylistRepository playlistRepository;
     private final RoomService roomService;
+    private final NotificationService notificationService;
+
+    private static final Logger logger = LoggerFactory.getLogger(RoomPlaybackServiceImpl.class);
 
     private static final int ORDER_GAP = 1000;
 
@@ -87,13 +94,26 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
 
         ReentrantLock lock = lockManager.getLock(roomId);
         lock.lock();
-
+        RoomPlaybackStateDto result;
         try {
-           return  playSongInternal(roomId,songId,userId);
+           result =  playSongInternal(roomId,songId,userId);
         } finally {
             lock.unlock();
             lockManager.releaseLockIfUnused(roomId);
         }
+
+        try {
+            notificationService.sendPlaybackUpdate(
+                    mapDtoToState(result),
+                    userId
+            );
+        } catch (Exception e) {
+            // 🔴 Never break playback flow
+            logger.warn("Failed to send playback notification for roomId={}", roomId, e);
+        }
+
+        return result;
+
     }
 
     /**
@@ -168,12 +188,25 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
         ReentrantLock lock = lockManager.getLock(roomId);
         lock.lock();
 
+        RoomPlaybackStateDto result;
+
         try {
-            return playPlaylistInternal(roomId,playlistId,userId);
+            result = playPlaylistInternal(roomId,playlistId,userId);
         } finally {
             lock.unlock();
             lockManager.releaseLockIfUnused(roomId);
         }
+
+        try {
+            notificationService.sendPlaybackUpdate(
+                    mapDtoToState(result),
+                    userId
+            );
+        } catch (Exception e) {
+            logger.warn("Failed to send playlist notification for roomId={}", roomId, e);
+        }
+
+        return result;
     }
 
     /**
@@ -216,12 +249,31 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
         ReentrantLock lock = lockManager.getLock(roomId);
         lock.lock();
 
+        RoomPlaybackStateDto result;
+        Long beforeVersion = null;
+
         try {
-           return pausePlaybackInternal(roomId,userId);
+            RoomPlaybackState current = getState(roomId);
+            beforeVersion = current.getStateVersion();
+
+            result = pausePlaybackInternal(roomId, userId);
         } finally {
             lock.unlock();
             lockManager.releaseLockIfUnused(roomId);
         }
+
+        if (result != null && !Objects.equals(beforeVersion, result.getVersion())) {
+            try {
+                notificationService.sendPlaybackUpdate(
+                        mapDtoToState(result),
+                        userId
+                );
+            } catch (Exception e) {
+                logger.warn("Failed to send pause notification for roomId={}", roomId, e);
+            }
+        }
+
+        return result;
 
     }
 
@@ -260,12 +312,31 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
         ReentrantLock lock = lockManager.getLock(roomId);
         lock.lock();
 
+        RoomPlaybackStateDto result;
+        Long beforeVersion = null;
+
         try {
-           return resumePlaybackInternal(roomId,userId);
+            RoomPlaybackState current = getState(roomId);
+            beforeVersion = current.getStateVersion();
+
+            result = resumePlaybackInternal(roomId, userId);
         } finally {
             lock.unlock();
             lockManager.releaseLockIfUnused(roomId);
         }
+
+        if (result != null && !Objects.equals(beforeVersion, result.getVersion())) {
+            try {
+                notificationService.sendPlaybackUpdate(
+                        mapDtoToState(result),
+                        userId
+                );
+            } catch (Exception e) {
+                logger.warn("Failed to send resume notification for roomId={}", roomId, e);
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -305,13 +376,25 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
 
         ReentrantLock lock = lockManager.getLock(roomId);
         lock.lock();
+        RoomPlaybackStateDto result;
 
         try {
-           return seekPlaybackInternal(roomId,newOffsetMillis,userId);
+           result =  seekPlaybackInternal(roomId,newOffsetMillis,userId);
         } finally {
             lock.unlock();
             lockManager.releaseLockIfUnused(roomId);
         }
+
+        try {
+            notificationService.sendPlaybackUpdate(
+                    mapDtoToState(result),
+                    userId
+            );
+        } catch (Exception e) {
+            logger.warn("Failed to send seek notification for roomId={}", roomId, e);
+        }
+
+        return result;
     }
 
     /**
@@ -377,12 +460,25 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
         ReentrantLock lock = lockManager.getLock(roomId);
         lock.lock();
 
+        RoomPlaybackStateDto result;
+
         try {
-            return skipToNextInternal(roomId,userId);
+            result = skipToNextInternal(roomId, userId);
         } finally {
             lock.unlock();
             lockManager.releaseLockIfUnused(roomId);
         }
+
+        try {
+            notificationService.sendPlaybackUpdate(
+                    mapDtoToState(result),
+                    userId
+            );
+        } catch (Exception e) {
+            logger.warn("Failed to send skip notification for roomId={}", roomId, e);
+        }
+
+        return result;
 
     }
 
@@ -465,6 +561,7 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
                     .serverTime(System.currentTimeMillis())
                     .startedAt(state.getStartedAt())
                     .updatedAt(state.getUpdatedAt())
+                    .lastActionBy(state.getLastActionBy())
                     .build();
         }
 
@@ -489,6 +586,7 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
                 .status(state.getStatus())
                 .version(state.getStateVersion())
                 .serverTime(System.currentTimeMillis())
+                .lastActionBy(state.getLastActionBy())
                 .startedAt(state.getStartedAt())
                 .updatedAt(state.getUpdatedAt())
                 .build();
@@ -500,5 +598,22 @@ public class RoomPlaybackServiceImpl implements RoomPlaybackService {
         } else {
             state.setStateVersion(state.getStateVersion() + 1);
         }
+    }
+
+
+    // for notification service use case
+    private RoomPlaybackState mapDtoToState(RoomPlaybackStateDto dto) {
+
+        return RoomPlaybackState.builder()
+                .roomId(dto.getRoomId())
+                .songId(dto.getSongId())
+                .queueItemId(dto.getQueueItemId())
+                .offsetMillis(dto.getOffsetMillis())
+                .status(dto.getStatus())
+                .stateVersion(dto.getVersion())
+                .startedAt(dto.getStartedAt())
+                .updatedAt(dto.getUpdatedAt())
+                .lastActionBy(dto.getLastActionBy()) // optional
+                .build();
     }
 }
