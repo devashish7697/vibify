@@ -1,5 +1,7 @@
 package com.vibify.room.service;
 
+import com.vibify.chat.repository.ChatMessageRepository;
+import com.vibify.common.storage.ObjectStorageService;
 import com.vibify.common.util.InviteCodeGenerator;
 import com.vibify.room.dto.CreateRoomRequestDto;
 import com.vibify.room.dto.RoomResponseDto;
@@ -17,10 +19,13 @@ import com.vibify.room.repository.RoomRepository;
 import com.vibify.room.service.RoomService;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -30,6 +35,10 @@ public class RoomServiceImpl implements RoomService {
     private final RoomRepository roomRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final RoomPlaybackStateRepository playbackStateRepository;
+    private final ChatMessageRepository chatMessageRepository;
+    private final ObjectStorageService storageService;
+
+    private static final Logger logger = LoggerFactory.getLogger(RoomServiceImpl.class);
 
     /**
      * Create a new room.
@@ -102,6 +111,8 @@ public class RoomServiceImpl implements RoomService {
         room.setStatus(RoomStatus.ENDED);
         roomRepository.save(room);
     }
+
+
 
     /**
      * Fetch room by ID.

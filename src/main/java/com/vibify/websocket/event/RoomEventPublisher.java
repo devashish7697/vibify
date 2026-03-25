@@ -73,4 +73,14 @@ public class RoomEventPublisher {
                 event
         );
     }
+
+
+    /// Chat Events
+    public void publishChatEvent(UUID roomId, WsEvent<?> event) {
+
+        messagingTemplate.convertAndSend(
+                "/topic/room/" + roomId + "/chat",
+                event
+        );
+    }
 }

@@ -23,10 +23,32 @@ public class WsEvent<T> {
     private T data;
 
 
-    public static <T> WsEvent<T> of(RoomEventType type, UUID roomId, T data) {
+    public static <T> WsEvent<T> of(
+            RoomEventType type,
+            UUID roomId,
+            T data
+    ) {
         return WsEvent.<T>builder()
                 .eventType(type)
                 .roomId(roomId)
+                .timestamp(System.currentTimeMillis())
+                .data(data)
+                .build();
+    }
+
+
+    public static <T> WsEvent<T> of(
+            RoomEventType type,
+            UUID roomId,
+            Long triggeredBy,
+            Long version,
+            T data
+    ) {
+        return WsEvent.<T>builder()
+                .eventType(type)
+                .roomId(roomId)
+                .triggeredBy(triggeredBy)
+                .version(version)
                 .timestamp(System.currentTimeMillis())
                 .data(data)
                 .build();
