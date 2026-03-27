@@ -3,6 +3,7 @@ package com.vibify.room.service;
 import com.vibify.room.dto.RoomMemberDto;
 import com.vibify.common.exception.room_exception.*;
 import com.vibify.room.model.room_entity.Room;
+import com.vibify.room.model.room_entity.RoomStatus;
 import com.vibify.room.model.room_member.RoomMember;
 import com.vibify.room.model.room_member.RoomMemberRole;
 import com.vibify.room.repository.RoomMemberRepository;
@@ -22,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -44,6 +46,11 @@ public class RoomMembershipServiceImpl implements RoomMembershipService {
     public void joinRoom(String inviteCode, Long userId) {
 
         Room room = roomService.getRoomByInviteCodeEntity(inviteCode);
+
+        if (room.getStatus() != RoomStatus.ACTIVE) {
+            throw new RoomException("Cannot join inactive room");
+        }
+
         handleMembershipJoin(room.getId(), userId);
     }
 
@@ -100,6 +107,10 @@ public class RoomMembershipServiceImpl implements RoomMembershipService {
                 .collect(Collectors.toList());
     }
 
+
+    /// get Active room for user if he is in any room
+
+
     /**
      * Validate user membership.
      */
@@ -127,10 +138,45 @@ public class RoomMembershipServiceImpl implements RoomMembershipService {
         return room.getHostUserId().equals(userId);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<UUID> getActiveRoomId(Long userId) {
+        return roomMemberRepository
+                .findFirstByUserIdAndLeftAtIsNull(userId)
+                .map(RoomMember::getRoomId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UUID getActiveRoomIdOrThrow(Long userId) {
+        return roomMemberRepository
+                .findFirstByUserIdAndLeftAtIsNull(userId)
+                .map(RoomMember::getRoomId)
+                .orElseThrow(() ->
+                        new RoomNotMemberException("User is not part of any active room"));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean isUserInAnyRoom(Long userId) {
+        return roomMemberRepository
+                .existsByUserIdAndLeftAtIsNull(userId);
+    }
+
     /**
      * Handles membership join logic including rejoin.
      */
     private void handleMembershipJoin(UUID roomId, Long userId) {
+
+        // Ensure user is not already in another active room
+        roomMemberRepository
+                .findActiveRoomForUpdate(userId)
+                .ifPresent(existing -> {
+                    if (!existing.getRoomId().equals(roomId)) {
+                        existing.setLeftAt(LocalDateTime.now());
+                        roomMemberRepository.save(existing);
+                    }
+                });
 
         RoomMember existingMember = roomMemberRepository
                 .findByRoomIdAndUserId(roomId, userId)

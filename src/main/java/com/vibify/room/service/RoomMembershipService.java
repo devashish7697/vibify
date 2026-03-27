@@ -3,6 +3,7 @@ package com.vibify.room.service;
 import com.vibify.room.dto.RoomMemberDto;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface RoomMembershipService {
@@ -32,5 +33,15 @@ public interface RoomMembershipService {
      * Check if user is the host of the room.
      */
     boolean isUserHost(UUID roomId, Long userId);
+
+    /**
+     * Check if a user is associated with any room or not, so we can decide playback mode
+     */
+
+    Optional<UUID> getActiveRoomId(Long userId);
+
+    UUID getActiveRoomIdOrThrow(Long userId);
+
+    boolean isUserInAnyRoom(Long userId);
 
 }

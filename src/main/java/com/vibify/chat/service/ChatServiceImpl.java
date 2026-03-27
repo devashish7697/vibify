@@ -8,6 +8,7 @@ import com.vibify.chat.repository.ChatMessageStatusRepository;
 import com.vibify.common.exception.UserNotFoundException;
 import com.vibify.room.model.room_member.RoomMember;
 import com.vibify.room.repository.RoomMemberRepository;
+import com.vibify.room.service.RoomService;
 import com.vibify.user.model.User;
 import com.vibify.user.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
@@ -27,17 +28,20 @@ public class ChatServiceImpl implements ChatService {
     private final ChatMessageStatusRepository chatMessageStatusRepository;
     private final RoomMemberRepository roomMemberRepository;
     private final UserRepository userRepository;
+    private final RoomService roomService;
 
     public ChatServiceImpl(
             ChatMessageRepository chatMessageRepository,
             ChatMessageStatusRepository chatMessageStatusRepository,
             RoomMemberRepository roomMemberRepository,
-                    UserRepository userRepository
+                    UserRepository userRepository,
+            RoomService roomService
     ) {
         this.chatMessageRepository = chatMessageRepository;
         this.chatMessageStatusRepository = chatMessageStatusRepository;
         this.roomMemberRepository = roomMemberRepository;
         this.userRepository = userRepository;
+        this.roomService = roomService;
     }
 
     @Override
@@ -98,6 +102,7 @@ public class ChatServiceImpl implements ChatService {
                 ).collect(Collectors.toList());
 
         chatMessageStatusRepository.saveAll(statuses);
+        roomService.updateRoomActivity(roomId);
 
         // 🔹 6. Return response
         return ChatMessageResponse.builder()
@@ -158,6 +163,7 @@ public class ChatServiceImpl implements ChatService {
         message.setDeletedAt(now);
 
         chatMessageRepository.save(message);
+        roomService.updateRoomActivity(roomId);
     }
 
     @Override
@@ -199,6 +205,8 @@ public class ChatServiceImpl implements ChatService {
                         ChatMessageStatusType.SEEN,
                         now
                 );
+
+        roomService.updateRoomActivity(roomId);
 
         // 🔥 4. RETURN WHETHER UPDATED
         return updatedRows > 0;
@@ -305,6 +313,8 @@ public class ChatServiceImpl implements ChatService {
                     .status(status.name())
                     .build());
         }
+
+        roomService.updateRoomActivity(roomId);
 
         return response;
     }

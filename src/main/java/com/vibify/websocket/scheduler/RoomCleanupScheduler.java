@@ -30,7 +30,7 @@ public class RoomCleanupScheduler {
     public void cleanupInactiveRooms() {
 
         LocalDateTime cutoff =
-                LocalDateTime.now().minusMinutes(10);
+                LocalDateTime.now().minusMinutes(20);
 
         List<Room> inactiveRooms =
                 roomRepository.findInactiveRooms(cutoff);
